@@ -96,7 +96,7 @@ class GitHubWebHookPlugin(BasePlugin):
         return res
 
     def make_push_summary(self, postdata):
-        message = "\x0f[%s] %s" % (self._format(postdata['repository']['name'], "repo"), self._format(postdata['author']['name'].encode('ascii', 'ignore'), "author"))
+        message = "\x0f[%s] %s" % (self._format(postdata['repository']['name'], "repo"), self._format(postdata['pusher']['name'].encode('ascii', 'ignore'), "author"))
 
         distinct_commits = []
         for commit in postdata['commits']:
@@ -107,7 +107,7 @@ class GitHubWebHookPlugin(BasePlugin):
         ref_name = re.sub("\Arefs/(heads|tags)/", "", postdata['ref'])
         base_ref_name = re.sub("\Arefs/(heads|tags)/", "", postdata['base_ref'])
 
-        if postdata['created']:
+        if postdata['created'] or postdata['before'] == "0" * 40:
             if "refs/tags/" in postdata['ref']:
                 message += " tagged %s at" % self._format(ref_name, "tag")
                 if postdata['base_ref']:
@@ -124,7 +124,7 @@ class GitHubWebHookPlugin(BasePlugin):
 
                 message += " (+%s new commit%s)" % (self._format(num, "bold"), ("", "s")[num > 1])
 
-        elif postdata['deleted']:
+        elif postdata['deleted'] or postdata['after'] == "0" * 40:
             message += " \00304deleted\017 %s at %s" % (self._format(ref_name, "branch"), self._format(postdata['before'][:7], "hash"))
 
         elif postdata['forced']:
