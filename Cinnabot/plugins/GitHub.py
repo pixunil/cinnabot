@@ -12,22 +12,24 @@ class GitHubPlugin(BasePlugin):
             if i.startswith("watch_github_user"):
                 users.append(self._get_config(i))
         return users
-        
+
     def _load_packages_list(self):
         self._packages_list = []
         self._packages_per_user = {}
         for user in self._get_watch_users():
             self._packages_per_user[user] = []
             page = 1
-            repos = self._retrieve_github_info("https://api.github.com/users/%s/repos?access_token=%s" % (user, self._get_config("github_access_token")))
+            repos = self._retrieve_github_info("https://api.github.com/users/%s/repos" % (user))
             while repos and len(repos) > 0:
                 for repo in repos:
                     self._packages_list.append(repo["name"])
                     self._packages_per_user[user].append(repo["name"])
                 page += 1
-                repos = self._retrieve_github_info("https://api.github.com/users/%s/repos?access_token=%s&page=%d" % (user, self._get_config("github_access_token"), page))
-    
+                repos = self._retrieve_github_info("https://api.github.com/users/%s/repos?page=%d" % (user, page))
+
     def _retrieve_github_info(self, url):
+        url += (("?", "&")["?" in url]) + "access_token=" + self._get_config("github_access_token")
+
         try:
             filename, message = urllib.urlretrieve(url)
             f = open(filename)
@@ -36,7 +38,7 @@ class GitHubPlugin(BasePlugin):
             return json.loads(data)
         except:
             return None
-    
+
     def _format_issue_info(self, issue_info):
         try:
             #~ for i in issue_info:
@@ -47,7 +49,7 @@ class GitHubPlugin(BasePlugin):
             return u"[\x0313%s\x0f] \x0314%s #%d, %s\x0f \x0315%s\x0f: %s \x0302\x1f%s\x0f" % (issue_info["html_url"].split("/")[-3], ("Issue", "Pull request")[("pull_request" in issue_info) and ("url" in issue_info["pull_request"]) and (issue_info["pull_request"]["url"] != None)], issue_info["number"], issue_info["state"], issue_info["user"]["login"], issue_title, issue_info["html_url"])
         except:
             return None
-            
+
     def _format_commit_info(self, commit_info):
         try:
             #~ for i in commit_info:
@@ -58,7 +60,7 @@ class GitHubPlugin(BasePlugin):
             return "[\x0313%s\x0f] \x0314Commit %s\x0f \x0315%s\x0f: %s" % (commit_info["html_url"].split("/")[-3], commit_info["sha"], commit_info["author"]["name"], commit_message)
         except:
             return None
-            
+
     def process_channel_message(self, source, target, msg):
         if source.startswith("GitHub"):
             return
@@ -77,14 +79,16 @@ class GitHubPlugin(BasePlugin):
                 new_word = new_word.replace(c, " ")
                 if " " in new_word:
                     other_words += new_word.split(" ")
+
         issues_url_words = [word for word in words if word.startswith("https://github.com/") and ("/issues/" in word or "/pull/" in word)]
         issues_urls = []
         for url in issues_url_words:
-            issues_urls.append(url.replace("https://github.com/", "https://api.github.com/repos/").replace("/pull/", "/pulls/") + "?access_token=" + self._get_config("github_access_token"))
+            issues_urls.append(url.replace("https://github.com/", "https://api.github.com/repos/").replace("/pull/", "/pulls/"))
         packages_list = []
         for package in self._packages_list:
             if package.lower() in words_lower or package.lower() in other_words:
                 packages_list.append(package)
+
         issues_numbers = []
         for i in range(len(words)):
             if words[i].lower() == "issue" and i < len(words) - 1:
@@ -104,6 +108,7 @@ class GitHubPlugin(BasePlugin):
                     issues_numbers.append(issue_number)
                 except:
                     pass
+
         if len(packages_list) == 0:
             packages_list = self._packages_list
         if len(issues_numbers) > 0:
@@ -111,7 +116,7 @@ class GitHubPlugin(BasePlugin):
                 for issue_number in issues_numbers:
                     for user in self._get_watch_users():
                         if package in self._packages_per_user[user]:
-                            issues_urls.append("https://api.github.com/repos/%s/%s/issues/%d?access_token=%s" % (user, package, issue_number, self._get_config("github_access_token")))
+                            issues_urls.append("https://api.github.com/repos/%s/%s/issues/%d" % (user, package, issue_number))
         for url in issues_urls:
             issue_info = self._retrieve_github_info(url)
             if issue_info:
@@ -124,8 +129,10 @@ class GitHubPlugin(BasePlugin):
                     return self.privmsg_response(target, output_message)
         commits_url_words = [word for word in words if word.startswith("https://github.com/") and "/commit/" in word]
         commits_urls = []
+
         for url in commits_url_words:
-            commits_urls.append(url.replace("https://github.com/", "https://api.github.com/repos/").replace("/commit/", "/git/commits/") + "?access_token=" + self._get_config("github_access_token"))
+            commits_urls.append(url.replace("https://github.com/", "https://api.github.com/repos/").replace("/commit/", "/git/commits/"))
+
         for url in commits_urls:
             commit_info = self._retrieve_github_info(url)
             if commit_info:
