@@ -4,6 +4,15 @@
 from Cinnabot.BasePlugin import BasePlugin
 import urllib
 import json
+import re
+
+COMMENT_EXTRACT_RE = re.compile(r"""
+    (.+?)               # extract the first parts of the url: server, owner, repository
+    /(?:issues|pulls)   # remove the type, as it is always "issues" ("pulls" would be comments on the diff)
+    /\d+                # remove the number
+    \#issuecomment-(\d+)  # extract the nuber of the comment
+    """, re.X)
+COMMENT_EXTRACT_SUB = r"\1/issues/comments/\2"
 
 class GitHubPlugin(BasePlugin):
     def _get_watch_users(self):
@@ -39,14 +48,39 @@ class GitHubPlugin(BasePlugin):
         except:
             return None
 
-    def _format_issue_info(self, issue_info):
+    def _format_issue_info(self, issue_info, issue):
         try:
             #~ for i in issue_info:
                 #~ print i, issue_info[i]
             issue_title = issue_info["title"]
             if len(issue_title) > 97:
                 issue_title = issue_title[:97] + "..."
-            return u"[\x0313%s\x0f] \x0314%s #%d, %s\x0f \x0315%s\x0f: %s \x0302\x1f%s\x0f" % (issue_info["html_url"].split("/")[-3], ("Issue", "Pull request")[("pull_request" in issue_info) and ("url" in issue_info["pull_request"]) and (issue_info["pull_request"]["url"] != None)], issue_info["number"], issue_info["state"], issue_info["user"]["login"], issue_title, issue_info["html_url"])
+
+            # use the url of the user when it is available
+            if "url" in issue:
+                url = issue["url"]
+            else:
+                url = issue_info["html_url"]
+
+            return u"[\x0313%s\x0f] \x0314%s #%d, %s\x0f \x0315%s\x0f: %s \x0302\x1f%s\x0f" % (issue_info["html_url"].split("/")[-3], ("Issue", "Pull request")[("pull_request" in issue_info) and ("url" in issue_info["pull_request"]) and (issue_info["pull_request"]["url"] != None)], issue_info["number"], issue_info["state"], issue_info["user"]["login"], issue_title, url)
+        except:
+            return None
+
+    def _format_issue_comment_info(self, comment_info):
+        sentence = u"[\x0313{repo}\x0f] \x0314Comment \x0f \x0315{author}\x0f: {body}"
+
+        try:
+            body = comment_info["body"]
+            if len(body) > 97:
+                body = body[:97] + "..."
+
+            data = {
+                "repo":   comment_info["html_url"].split("/")[-3],
+                "author": comment_info["user"]["login"],
+                "body":   body
+            }
+
+            return sentence.format(**data)
         except:
             return None
 
@@ -81,9 +115,19 @@ class GitHubPlugin(BasePlugin):
                     other_words += new_word.split(" ")
 
         issues_url_words = [word for word in words if word.startswith("https://github.com/") and ("/issues/" in word or "/pull/" in word)]
-        issues_urls = []
+        issues = []
         for url in issues_url_words:
-            issues_urls.append(url.replace("https://github.com/", "https://api.github.com/repos/").replace("/pull/", "/pulls/"))
+            issue_url = url.replace("https://github.com/", "https://api.github.com/repos/").replace("/pull/", "/pulls/")
+            comment_url = COMMENT_EXTRACT_RE.sub(COMMENT_EXTRACT_SUB, issue_url)
+
+            issues.append({
+                "url":       url,
+                "issue-url": issue_url
+            })
+
+            if comment_url != issue_url:
+                issues[-1]["comment-url"] = comment_url
+
         packages_list = []
         for package in self._packages_list:
             if package.lower() in words_lower or package.lower() in other_words:
@@ -116,18 +160,29 @@ class GitHubPlugin(BasePlugin):
                 for issue_number in issues_numbers:
                     for user in self._get_watch_users():
                         if package in self._packages_per_user[user]:
-                            issues_urls.append("https://api.github.com/repos/%s/%s/issues/%d" % (user, package, issue_number))
+                            issues.append({
+                                "issue-url": "https://api.github.com/repos/%s/%s/issues/%d" % (user, package, issue_number)
+                            })
 
         res = []
 
-        for url in issues_urls:
-            issue_info = self._retrieve_github_info(url)
+        for issue in issues:
+            issue_info = self._retrieve_github_info(issue["issue-url"])
             if issue_info:
-                output_message = self._format_issue_info(issue_info)
+                output_message = self._format_issue_info(issue_info, issue)
+
                 if not output_message and "/issues/" in url:
                     issue_info = self._retrieve_github_info(url.replace("/issues/", "/pulls/"))
                     if issue_info:
-                        output_message = self._format_issue_info(issue_info)
+                        output_message = self._format_issue_info(issue_info, issue)
+
+                if output_message:
+                    res.append(self.privmsg_response(target, output_message))
+
+            if "comment-url" in issue:
+                comment_info = self._retrieve_github_info(issue["comment-url"])
+                output_message = self._format_issue_comment_info(comment_info)
+
                 if output_message:
                     res.append(self.privmsg_response(target, output_message))
 
