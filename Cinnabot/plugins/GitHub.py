@@ -117,6 +117,9 @@ class GitHubPlugin(BasePlugin):
                     for user in self._get_watch_users():
                         if package in self._packages_per_user[user]:
                             issues_urls.append("https://api.github.com/repos/%s/%s/issues/%d" % (user, package, issue_number))
+
+        res = []
+
         for url in issues_urls:
             issue_info = self._retrieve_github_info(url)
             if issue_info:
@@ -126,7 +129,8 @@ class GitHubPlugin(BasePlugin):
                     if issue_info:
                         output_message = self._format_issue_info(issue_info)
                 if output_message:
-                    return self.privmsg_response(target, output_message)
+                    res.append(self.privmsg_response(target, output_message))
+
         commits_url_words = [word for word in words if word.startswith("https://github.com/") and "/commit/" in word]
         commits_urls = []
 
@@ -138,4 +142,6 @@ class GitHubPlugin(BasePlugin):
             if commit_info:
                 output_message = self._format_commit_info(commit_info)
                 if output_message:
-                    return self.privmsg_response(target, output_message.replace("\n", " "))
+                    res.append(self.privmsg_response(target, output_message.replace("\n", " ")))
+
+        return res
